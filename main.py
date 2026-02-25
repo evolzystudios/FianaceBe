@@ -40,10 +40,10 @@ app.add_middleware(
 class ProjectBase(BaseModel):
     project_name: str
     client_name: str
-    client_type: str = Field(..., regex="^(direct|fiverr)$")
+    client_type: str = Field(...)
     order_price: Decimal = Field(..., gt=0)
     editor_payment: Decimal = Field(..., ge=0)
-    status: str = Field(..., regex="^(paid|pending)$")
+    status: str = Field(...)
 
     @validator("client_type")
     def validate_client_type(cls, v: str) -> str:
@@ -67,7 +67,7 @@ class ProjectCreate(ProjectBase):
 class ProjectUpdate(BaseModel):
     order_price: Optional[Decimal] = Field(None, gt=0)
     editor_payment: Optional[Decimal] = Field(None, ge=0)
-    status: Optional[str] = Field(None, regex="^(paid|pending)$")
+    status: Optional[str] = Field(None)
 
     @validator("status")
     def validate_status(cls, v: Optional[str]) -> Optional[str]:
