@@ -44,6 +44,7 @@ class ProjectBase(BaseModel):
     order_price: Decimal = Field(..., gt=0)
     editor_payment: Decimal = Field(..., ge=0)
     status: str = Field(...)
+    editor_payment_status: str = Field(default="unpaid")
 
     @validator("client_type")
     def validate_client_type(cls, v: str) -> str:
@@ -59,24 +60,53 @@ class ProjectBase(BaseModel):
             raise ValueError("status must be 'paid' or 'pending'")
         return v
 
+    @validator("editor_payment_status")
+    def validate_editor_payment_status(cls, v: str) -> str:
+        v = v.lower()
+        if v not in ("unpaid", "paid"):
+            raise ValueError("editor_payment_status must be 'unpaid' or 'paid'")
+        return v
+
 
 class ProjectCreate(ProjectBase):
     pass
 
 
 class ProjectUpdate(BaseModel):
+    project_name: Optional[str] = None
+    client_name: Optional[str] = None
+    client_type: Optional[str] = None
     order_price: Optional[Decimal] = Field(None, gt=0)
     editor_payment: Optional[Decimal] = Field(None, ge=0)
     status: Optional[str] = Field(None)
+    editor_payment_status: Optional[str] = Field(None)
+
+    @validator("client_type")
+    def validate_client_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v_norm = v.lower()
+        if v_norm not in ("direct", "fiverr"):
+            raise ValueError("client_type must be 'direct' or 'fiverr'")
+        return v_norm
 
     @validator("status")
     def validate_status(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        v = v.lower()
-        if v not in ("paid", "pending"):
+        v_norm = v.lower()
+        if v_norm not in ("paid", "pending"):
             raise ValueError("status must be 'paid' or 'pending'")
-        return v
+        return v_norm
+
+    @validator("editor_payment_status")
+    def validate_editor_payment_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v_norm = v.lower()
+        if v_norm not in ("unpaid", "paid"):
+            raise ValueError("editor_payment_status must be 'unpaid' or 'paid'")
+        return v_norm
 
 
 class ProjectInDB(ProjectBase):
@@ -136,6 +166,7 @@ def row_to_project(row: dict) -> ProjectInDB:
         editor_payment=Decimal(str(row["editor_payment"])),
         profit=Decimal(str(row["profit"])),
         status=row["status"],
+        editor_payment_status=row.get("editor_payment_status", "unpaid"),
         created_at=row.get("created_at"),
     )
 
@@ -166,6 +197,7 @@ def create_project(payload: ProjectCreate):
         "editor_payment": str(payload.editor_payment),
         "profit": str(fees["profit"]),
         "status": payload.status,
+        "editor_payment_status": payload.editor_payment_status,
     }
 
     resp = supabase.table("projects").insert(data).execute()
@@ -192,17 +224,24 @@ def get_project(project_id: str):
 def update_project(project_id: str, payload: ProjectUpdate):
     existing = get_project_or_404(project_id)
 
+    new_project_name = payload.project_name or existing["project_name"]
+    new_client_name = payload.client_name or existing["client_name"]
+    new_client_type = payload.client_type or existing["client_type"]
     new_order_price = Decimal(str(payload.order_price or existing["order_price"]))
     new_editor_payment = Decimal(str(payload.editor_payment or existing["editor_payment"]))
     new_status = payload.status or existing["status"]
+    new_editor_payment_status = payload.editor_payment_status or existing.get("editor_payment_status", "unpaid")
 
     fees = compute_financials(
-        client_type=existing["client_type"],
+        client_type=new_client_type,
         order_price=new_order_price,
         editor_payment=new_editor_payment,
     )
 
     updates = {
+        "project_name": new_project_name,
+        "client_name": new_client_name,
+        "client_type": new_client_type,
         "order_price": str(new_order_price),
         "editor_payment": str(new_editor_payment),
         "platform_fee": str(fees["platform_fee"]),
@@ -210,6 +249,7 @@ def update_project(project_id: str, payload: ProjectUpdate):
         "net_received": str(fees["net_received"]),
         "profit": str(fees["profit"]),
         "status": new_status,
+        "editor_payment_status": new_editor_payment_status,
     }
 
     resp = supabase.table("projects").update(updates).eq("id", project_id).execute()
